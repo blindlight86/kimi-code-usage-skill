@@ -62,13 +62,58 @@ function redact(s) {
   return `****...${s.slice(-4)}`;
 }
 
+async function clickByText(page, candidates) {
+  return page.evaluate((texts) => {
+    const nodes = Array.from(
+      document.querySelectorAll("button, a, [role='button'], div, span")
+    );
+    for (const n of nodes) {
+      const text = (n.textContent || "").trim().toLowerCase();
+      if (!text) continue;
+      if (texts.some((t) => text.includes(String(t).toLowerCase()))) {
+        if (n instanceof HTMLElement) {
+          n.click();
+          return true;
+        }
+      }
+    }
+    return false;
+  }, candidates);
+}
+
+async function clickLoginButton(page) {
+  return page.evaluate(() => {
+    const isVisible = (el) => {
+      const rect = el.getBoundingClientRect();
+      const style = window.getComputedStyle(el);
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.visibility !== "hidden" &&
+        style.display !== "none"
+      );
+    };
+    const norm = (s) => s.replace(/\s+/g, " ").trim().toLowerCase();
+    const nodes = Array.from(document.querySelectorAll("button, a, [role='button'], div, span"));
+    const target = nodes.find((n) => {
+      const txt = norm(n.textContent || "");
+      return isVisible(n) && (txt === "log in" || txt === "登录");
+    });
+    if (target && target instanceof HTMLElement) {
+      target.click();
+      return true;
+    }
+    return false;
+  });
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const timeoutSec = Number(process.env.KIMI_QR_LOGIN_TIMEOUT_SEC || 180);
   const screenshotPath =
     process.env.KIMI_QR_SCREENSHOT ||
     path.join(process.cwd(), "docs", "screenshots", "kimi-login-qr.png");
-  const headless = args.includes("--headless");
+  const headless = !args.includes("--show-browser");
 
   const puppeteer = await loadPuppeteer();
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "kimi-clean-profile-"));
@@ -86,7 +131,6 @@ async function main() {
   try {
     const page = await browser.newPage();
     let loginId = "";
-    let captured = { access_token: "", refresh_token: "" };
 
     page.on("response", async (res) => {
       try {
@@ -97,12 +141,6 @@ async function main() {
         if (!loginId && typeof data.id === "string" && data.id) {
           loginId = data.id;
         }
-        if (data.access_token && data.refresh_token) {
-          captured = {
-            access_token: data.access_token,
-            refresh_token: data.refresh_token,
-          };
-        }
       } catch {
         // Ignore non-JSON responses.
       }
@@ -112,33 +150,83 @@ async function main() {
       waitUntil: "domcontentloaded",
       timeout: 60000,
     });
-    await new Promise((r) => setTimeout(r, 5000));
+    await new Promise((r) => setTimeout(r, 3000));
+
+    // Ensure login flow is opened before screenshot.
+    await clickLoginButton(page);
+    await new Promise((r) => setTimeout(r, 3500));
+
+    // Wait until login id is captured from register_login request.
+    const loginWaitDeadline = Date.now() + 12000;
+    while (!loginId && Date.now() < loginWaitDeadline) {
+      await new Promise((r) => setTimeout(r, 300));
+    }
+
+    // Wait briefly for QR-related UI nodes.
+    try {
+      await page.waitForFunction(
+        () => {
+          const qrSelectors = [
+            "canvas",
+            "img[src*='qr']",
+            "img[alt*='QR']",
+            "[class*='qr']",
+            "[class*='qrcode']",
+          ];
+          return qrSelectors.some((s) => document.querySelector(s));
+        },
+        { timeout: 8000 }
+      );
+    } catch {
+      // continue with full-page screenshot fallback
+    }
 
     fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
-    await page.screenshot({ path: screenshotPath, fullPage: false });
+    // Prefer QR area screenshot when possible, fallback to viewport screenshot.
+    const qrElement =
+      (await page.$("img[src*='qr']")) ||
+      (await page.$("img[alt*='QR']")) ||
+      (await page.$("[class*='qrcode'] canvas")) ||
+      (await page.$("[class*='qr'] canvas")) ||
+      (await page.$("canvas"));
+    if (qrElement) {
+      await qrElement.screenshot({ path: screenshotPath });
+    } else {
+      await page.screenshot({ path: screenshotPath, fullPage: false });
+    }
 
     // Signal test/fallback mode without requiring real scan.
     if (process.env.KIMI_BOOTSTRAP_MARKER) {
       fs.writeFileSync(process.env.KIMI_BOOTSTRAP_MARKER, "ok\n");
     }
 
-    const deadline = Date.now() + timeoutSec * 1000;
-    while (Date.now() < deadline) {
-      if (captured.access_token && captured.refresh_token) break;
-      await new Promise((r) => setTimeout(r, 1000));
+    if (!loginId) {
+      // Fallback: directly create login session id from page context.
+      loginId = await page.evaluate(async () => {
+        const r = await fetch("/api/user/wx/register_login", {
+          method: "POST",
+          headers: {
+            accept: "application/json, text/plain, */*",
+            "content-type": "application/json",
+            "x-language": "zh-CN",
+            "x-msh-platform": "web",
+          },
+          body: "{}",
+        });
+        const data = await r.json();
+        return typeof data?.id === "string" ? data.id : "";
+      });
     }
 
-    if (captured.access_token && captured.refresh_token) {
+    if (loginId) {
       console.log(
         JSON.stringify(
           {
             success: true,
             login_id: loginId,
             qr_screenshot: screenshotPath,
-            access_token: captured.access_token,
-            refresh_token: captured.refresh_token,
-            access_token_redacted: redact(captured.access_token),
-            refresh_token_redacted: redact(captured.refresh_token),
+            qr_expires_in_seconds: timeoutSec,
+            message_for_session: `请在 ${timeoutSec} 秒内扫码登录。`,
           },
           null,
           2
@@ -151,7 +239,7 @@ async function main() {
       JSON.stringify(
         {
           success: false,
-          reason: "timeout waiting for QR scan",
+          reason: "failed to capture login id",
           login_id: loginId,
           qr_screenshot: screenshotPath,
         },

@@ -16,6 +16,7 @@
 - 二维码刷新登录
   - 自动打开登录页
   - 生成二维码截图，便于转发给客户扫码
+  - 返回二维码剩余可扫码时间，便于远程提醒
   - 扫码成功后自动写入新 token
 - 统一结构输出
   - 返回会员等级、周额度使用、频限窗口明细、重置时间（含小时）
@@ -102,6 +103,16 @@ bash scripts/bootstrap_kimi_login.sh
 
 ```bash
 bash scripts/refresh_kimi_token.sh --refresh
+```
+
+远程场景（推荐两阶段）：
+
+```bash
+# 1) 生成二维码并立刻发送给发问会话
+bash scripts/refresh_kimi_token.sh --prepare-qr
+
+# 2) 轮询扫码状态（可周期性提醒剩余时间）
+bash scripts/refresh_kimi_token.sh --poll-qr <login_id>
 ```
 
 二维码截图默认路径：

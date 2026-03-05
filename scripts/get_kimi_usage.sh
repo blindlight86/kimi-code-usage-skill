@@ -208,6 +208,9 @@ if [[ -f "$CRED_FILE" || -n "${ACCESS_TOKEN:-}" ]]; then
   if API_PAYLOAD="$("${API_CMD[@]}" 2>/dev/null)"; then
     normalize_api_json "$API_PAYLOAD" "$MEMBERSHIP_CLAIM"
     exit 0
+  elif [[ -n "${ACCESS_TOKEN:-}" || "${KIMI_USAGE_NO_BROWSER_FALLBACK:-0}" == "1" ]]; then
+    # If caller explicitly passed token, avoid forcing browser fallback.
+    exit 1
   fi
 fi
 

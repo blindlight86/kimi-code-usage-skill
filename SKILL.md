@@ -17,8 +17,12 @@ Retrieve and normalize Kimi Code usage with API-first execution and QR-based log
 1. Run credential precheck:
    - `bash scripts/get_kimi_usage.sh --check-credentials`
 2. If missing/expired credentials, refresh via QR flow:
-   - `bash scripts/refresh_kimi_token.sh --refresh`
-   - QR screenshot path: `docs/screenshots/kimi-login-qr.png`
+   - `bash scripts/refresh_kimi_token.sh --prepare-qr`
+   - Immediately send `qr_screenshot` image to the asking session.
+     Use markdown image format: `![Kimi QR](<absolute qr_screenshot path>)`.
+   - Tell user remaining scan time from `qr_expires_in_seconds`.
+   - Poll login state via `bash scripts/refresh_kimi_token.sh --poll-qr <login_id>` until `status=login`.
+   - Or use one-shot mode: `bash scripts/refresh_kimi_token.sh --refresh`
 3. Query usage via API:
    - `bash scripts/get_kimi_usage.sh --api-only`
 4. For normal user-facing result:
@@ -45,6 +49,8 @@ Always return normalized JSON with this shape:
 ## Commands
 - `bash scripts/bootstrap_kimi_login.sh`
 - `bash scripts/refresh_kimi_token.sh --refresh`
+- `bash scripts/refresh_kimi_token.sh --prepare-qr`
+- `bash scripts/refresh_kimi_token.sh --poll-qr <login_id>`
 - `bash scripts/get_kimi_usage.sh --api-only`
 - `bash scripts/get_kimi_usage.sh --check-credentials`
 - `bash scripts/get_kimi_usage.sh --debug --api-only`
