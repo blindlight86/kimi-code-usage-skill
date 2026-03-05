@@ -23,6 +23,17 @@ def _percent(used, limit):
         return None
     return round((used / limit) * 100, 2)
 
+def _ratio(used, limit):
+    if used is None or limit in (None, 0):
+        return None
+    return round(used / limit, 4)
+
+def _percent_text(used, limit):
+    pct = _percent(used, limit)
+    if pct is None:
+        return None
+    return f"{pct}%"
+
 
 def _hours_to_reset(reset_time):
     if not reset_time:
@@ -76,7 +87,8 @@ def normalize_api_payload(payload_text: str) -> dict:
                     "limit": str(d.get("limit")) if d.get("limit") is not None else None,
                     "used": str(l_used) if l_used is not None else None,
                     "remaining": str(d.get("remaining")) if d.get("remaining") is not None else None,
-                    "usedPercent": _percent(l_used, l_limit),
+                    "usedPercent": _percent_text(l_used, l_limit),
+                    "usedRatio": _ratio(l_used, l_limit),
                     "resetTime": l_reset,
                     "resetInHours": _hours_to_reset(l_reset),
                 }
@@ -90,7 +102,8 @@ def normalize_api_payload(payload_text: str) -> dict:
                 "limit": str(detail.get("limit")) if detail.get("limit") is not None else None,
                 "used": str(detail.get("used")) if detail.get("used") is not None else None,
                 "remaining": str(detail.get("remaining")) if detail.get("remaining") is not None else None,
-                "usedPercent": _percent(used_val, limit_val),
+                "usedPercent": _percent_text(used_val, limit_val),
+                "usedRatio": _ratio(used_val, limit_val),
                 "resetTime": reset_time,
                 "resetInHours": _hours_to_reset(reset_time),
             },

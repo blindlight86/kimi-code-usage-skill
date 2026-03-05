@@ -42,7 +42,9 @@ def test_normalize_api_payload_billing_usage_shape():
     assert result["usage"]["limit"] == "100"
     assert result["usage"]["used"] == "4"
     assert result["usage"]["remaining"] == "96"
-    assert result["usage"]["usedPercent"] == 4.0
+    assert result["usage"]["usedPercent"] == "4.0%"
+    assert result["usage"]["usedRatio"] == 0.04
     assert result["usage"]["resetInHours"] is not None
     assert result["limits"][0]["windowSeconds"] == 300
-    assert result["limits"][0]["usedPercent"] == 0.0
+    assert result["limits"][0]["usedPercent"] == "0.0%"
+    assert result["limits"][0]["usedRatio"] == 0.0
